@@ -583,8 +583,6 @@ void divmnu(uint16_t q[], uint16_t r[],
      const uint16_t u[], const uint16_t v[]) {
 
    const uint32_t b = 65536; // Number base (16 bits).
-	 const uint8_t m=3;
-	 const uint8_t n=2;
    //uint16_t *un, *vn;  // Normalized form of u, v.
 	 uint16_t vn[4];
    uint16_t un[8];
@@ -613,7 +611,7 @@ void divmnu(uint16_t q[], uint16_t r[],
    // same amount.  We may have to append a high-order
    // digit on the dividend; we do that unconditionally.
 
-   s = nlz(v[n-1]) - 16;        // 0 <= s <= 15.
+   s = nlz(v[1]) - 16;        // 0 <= s <= 15.
    //vn = (uint16_t *)alloca(2*n);
    for (i = n - 1; i > 0; i--)
       vn[i] = (v[i] << s) | (v[i-1] >> 16-s);
@@ -666,7 +664,9 @@ again:
       for (i = 0; i < n; i++)
          r[i] = (un[i] >> s) | (un[i+1] << 16-s);
    }*/
-	 r[1] = (un[1] >> s) | (un[2] << 16-s);
+	 
+	 //Only return most significant 16 bits of remainder
+	 r[0] = (un[1] >> s) | (un[2] << 16-s);
    //return 0;
 }
 
