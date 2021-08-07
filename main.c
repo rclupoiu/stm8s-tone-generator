@@ -13,31 +13,34 @@
  //#define TEST_LED GPIOA, GPIO_PIN_3
  #define MUTE GPIOA, GPIO_PIN_1
  
- #define FREQ_UP GPIOA, GPIO_PIN_3
- //#define FREQ_DOWN GPIOD, GPIO_PIN_5
- #define FREQ_DOWN GPIOA, GPIO_PIN_3
+ #define CHANGE_FREQ GPIOA, GPIO_PIN_3
+ #define FREQ_DOWN GPIOD, GPIO_PIN_5
+ #define FREQ_UP GPIOD, GPIO_PIN_6
  
  #define TIM4_PERIOD       124
  
- #define INIT_FREQ 100
+ //This is for the display only. Must change for the audio manually in initFreq()
+ #define INIT_FREQ 100	
  
  #define FAST_COUNT_LIMIT 15
  #define SFAST_COUNT_LIMIT 15
  #define FREQ_UP_LIMIT 999999
- #define FREQ_DOWN_LIMIT 0
+ #define FREQ_DOWN_LIMIT 1
  
  
  #include "STM8S.h"
- #include "stm8s103_serial.h"
+ //#include "stm8s103_serial.h"
  #include "stm8s103_adc.h"
  #include "stm8s_tim4.h"
   //#include "stm8s.h"
  
-__IO uint32_t VolumeADC = 0;
+__IO uint8_t VolumeADC = 0;
 __IO uint32_t TimeCounter = 0;
+__IO uint32_t frequency = INIT_FREQ;
 
-uint32_t frequency = INIT_FREQ;
 uint32_t old_frequency = INIT_FREQ;
+uint8_t fast_counter = 0;
+uint8_t sfast_counter = 0;
 
 void delay (int ms) //Function Definition 
 {
@@ -48,19 +51,6 @@ for (i=0; i<=ms; i++)
 for (j=0; j<120; j++) // Nop = Fosc/4
 _asm("nop"); //Perform no operation //assembly code 
 }
-}
-
-uint32_t nlz(uint32_t x){
-	uint32_t n;
-	
-	if (x == 0) return(32);
-   n = 0;
-   if (x <= 0x0000FFFF) {n = n +16; x = x <<16;}
-   if (x <= 0x00FFFFFF) {n = n + 8; x = x << 8;}
-   if (x <= 0x0FFFFFFF) {n = n + 4; x = x << 4;}
-   if (x <= 0x3FFFFFFF) {n = n + 2; x = x << 2;}
-   if (x <= 0x7FFFFFFF) {n = n + 1;}
-   return n;
 }
 
 void divmnu(uint16_t q[], uint16_t r[],
@@ -104,24 +94,24 @@ void getDispRam(uint8_t *disp_ram, uint32_t frequency);
 
 void updateDisp(uint32_t frequency);
 
-void updateFreq(uint32_t frequency);
+//void updateFreq(uint32_t frequency);
+void updateFreq(void);
+void freqButton(int8_t freq_up);
+
+void initFreq(void);
+void wgDelay(void);
+void sendWg(uint8_t b1, uint8_t b2);
 
 main()
 {
 	
-	/*
 	
-	uint8_t addr_content=0;	
-	
-	uint8_t bank_1_addr = 0x0C;
-	uint8_t bank_2_addr = 0x0D;
-	
+
+		
 	uint8_t volumeCommand = 0;
 	uint8_t oldVolumeCommand = 0;
 	
 	//int32_t frequency = 100;
-	uint8_t fast_counter = 0;
-	uint8_t sfast_counter = 0;
 	
 	CLK_DeInit();
 	
@@ -170,12 +160,23 @@ main()
 	GPIO_Init (MUTE, GPIO_MODE_OUT_PP_LOW_SLOW);
 	GPIO_WriteHigh(MUTE);
 	
+	GPIO_Init (CHANGE_FREQ, GPIO_MODE_IN_FL_IT);
 	GPIO_Init (FREQ_UP, GPIO_MODE_IN_FL_NO_IT);
-	//GPIO_Init (FREQ_DOWN, GPIO_MODE_IN_FL_NO_IT);
+	GPIO_Init (FREQ_DOWN, GPIO_MODE_IN_FL_NO_IT);
 	
 	//GPIO_DeInit(GPIOD); //prepare Port D for working 
 	GPIO_Init (DRIVER_ADDR_PIN, GPIO_MODE_OUT_PP_LOW_SLOW);
 	GPIO_WriteHigh(GPIOD,GPIO_PIN_3);
+	
+	
+	
+	
+	EXTI_SetExtIntSensitivity(EXTI_PORT_GPIOA, EXTI_SENSITIVITY_FALL_ONLY);
+  EXTI_SetTLISensitivity(EXTI_TLISENSITIVITY_FALL_ONLY);
+	
+	
+	
+	
 	
 	CLK_PeripheralClockConfig(CLK_PERIPHERAL_I2C , ENABLE);  
 	CLK_PeripheralClockConfig(CLK_PERIPHERAL_SPI , ENABLE);
@@ -203,23 +204,27 @@ main()
 	SPI_Cmd(ENABLE);
 	
 	CLK_PeripheralClockConfig(CLK_PERIPHERAL_ADC, ENABLE);
-	*/
+	
 	
 	
 	
 	//uint32_t test_int = 0b11111110111111111111111111111111;
 	
-	uint16_t q[2], r[2];
-	uint16_t *u, *v;
-	uint16_t entire_u[]={0x0000,0xF000,0xF423};
-	uint16_t entire_v[]={0x7840,0x017D};
-
-	u=&entire_u[0];
-  v=&entire_v[0];
 	
-	divmnu(q, r, u, v);
 
 	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	/*
 	Serial_begin((uint32_t)57600);
 	
 	//freq_reg = (uint32_t)((frequency * AD_2POW28/AD_MCLK) + 1);
@@ -232,22 +237,41 @@ main()
 	Serial_newline();
 	Serial_print_int((uint16_t)q[0]>>8&0b11111111);
 	Serial_newline();
+	Serial_print_int((int)1);
+	Serial_newline();
 	Serial_print_int((uint16_t)q[0]&0b11111111);
+	Serial_newline();
+	Serial_print_int((int)2);
 	Serial_newline();
 	Serial_print_int((uint16_t)q[1]>>8&0b11111111);
 	Serial_newline();
+	Serial_print_int((int)3);
+	Serial_newline();
 	Serial_print_int((uint16_t)q[1]&0b11111111);
+	Serial_newline();
+	Serial_print_int((int)4);
 	
 	Serial_newline();
 	Serial_newline();
 	
 	Serial_print_int((uint16_t)r[0]>>8&0b11111111);
 	Serial_newline();
+	Serial_print_int((int)5);
+	Serial_newline();
 	Serial_print_int((uint16_t)r[0]&0b11111111);
 	Serial_newline();
-	Serial_print_int((uint16_t)r[1]>>8&0b11111111);
-	Serial_newline();
-	Serial_print_int((uint16_t)r[1]&0b11111111);
+	Serial_print_int((int)6);
+	*/
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
 	
 	//Serial_newline();
 	//Serial_print_int((int)26);
@@ -315,12 +339,12 @@ main()
 	
 	
 	
-	/*
+	
 	startLCD();
 	
-	delay(10000);	
+	//delay(10000);	
 	
-	*/
+	
 	
 	
 							
@@ -395,20 +419,22 @@ main()
 	
 	
 	
-	/*
+	
 	enableInterrupts();
 	TIM4_Cmd(ENABLE);
+	
+	/*
 	
 	delay(200);
 	volumeCommand=VolumeADC/4;
 	//changePot(volumeCommand);		
-	
+	*/
 	
 	updateDisp(frequency);
 	
-	updateFreq(frequency);
+	//updateFreq();
+	initFreq();
 	
-	*/
 	
 	
 	while (1){		
@@ -418,13 +444,15 @@ main()
 	
 	
 	
-		/*
+		
 		
 
 		if(!GPIO_ReadInputPin(FREQ_UP)){
-			delay(1500);
+			delay(3000);
 			if(!GPIO_ReadInputPin(FREQ_UP)){
-				if(fast_counter==FAST_COUNT_LIMIT){
+				freqButton(1);
+				/*
+				if(fast_counter==FAST_COUNT_LIMIT && frequency>10){
 					if(sfast_counter==FAST_COUNT_LIMIT)
 						frequency+=20;
 					else
@@ -467,29 +495,27 @@ main()
 					fast_counter=0;
 					sfast_counter=0;
 				}
-				
+				*/
 			}
 		}
 		
-		*/
-		/*
+		
+		
 		
 		if(!GPIO_ReadInputPin(FREQ_DOWN)){
-			delay(1500);
+			delay(3000);
 			if(!GPIO_ReadInputPin(FREQ_DOWN)){
-				if(fast_counter==FAST_COUNT_LIMIT){
+				freqButton(-1);
+				/*
+				if(fast_counter==FAST_COUNT_LIMIT && frequency>10){
 					if(sfast_counter==FAST_COUNT_LIMIT)
 						frequency-=20;
 					else
 						frequency-=5;
 				}
-				else{
+				else if (frequency>FREQ_DOWN_LIMIT){
 					frequency-=1;
 				}
-				
-				
-				if(frequency<FREQ_DOWN_LIMIT)
-					frequency=FREQ_DOWN_LIMIT;
 				
 				
 				updateDisp(frequency);
@@ -520,11 +546,11 @@ main()
 					fast_counter=0;
 					sfast_counter=0;
 				}
-				
+				*/
 			}
 		}
 		
-		*/
+		
 		
 		
 		
@@ -575,10 +601,55 @@ main()
 }
 
 
+void freqButton(int8_t freq_up){
+	if(fast_counter==FAST_COUNT_LIMIT && frequency>10){
+			if(sfast_counter==FAST_COUNT_LIMIT)
+				frequency+=freq_up*20;
+			else
+				frequency+=freq_up*5;
+	}
+	else if (frequency>FREQ_DOWN_LIMIT){
+		frequency+=freq_up*1;
+	}
+		
+		
+		if(frequency>FREQ_UP_LIMIT)
+			frequency=FREQ_UP_LIMIT;
+		
+		
+		updateDisp(frequency);
+		
+		delay(1);
+		
+		
+		//If button still pressed, increment progressively quicker
+		if(!GPIO_ReadInputPin(FREQ_UP) || !GPIO_ReadInputPin(FREQ_DOWN)){
+			delay(50);
+			if(!GPIO_ReadInputPin(FREQ_UP) || !GPIO_ReadInputPin(FREQ_DOWN)){
+				
+				if(fast_counter<FAST_COUNT_LIMIT){
+					fast_counter+=1;
+				}
+				
+				else if(sfast_counter<SFAST_COUNT_LIMIT){
+					sfast_counter+=1;
+				}
+					
+			}	
+			else{
+				fast_counter=0;
+				sfast_counter=0;
+			}
+		}
+		else{
+			fast_counter=0;
+			sfast_counter=0;
+		}
+		
+}
 
 
-
-//FROM: https://github.com/hcs0/Hackers-Delight/blob/master/divmnu.c.txt
+//ADAPTED FROM: https://github.com/hcs0/Hackers-Delight/blob/master/divmnu.c.txt
 void divmnu(uint16_t q[], uint16_t r[],
      const uint16_t u[], const uint16_t v[]) {
 
@@ -589,7 +660,9 @@ void divmnu(uint16_t q[], uint16_t r[],
    uint32_t qhat;            // Estimated quotient digit.
    uint32_t rhat;            // A remainder.
    uint32_t p;               // Product of two digits.
-   int32_t s, i, j, t, k;
+   uint8_t i;
+   int8_t j;
+   int32_t t, k;
 
     /*
    if (m < n || n <= 0 || v[n-1] == 0)
@@ -611,50 +684,52 @@ void divmnu(uint16_t q[], uint16_t r[],
    // same amount.  We may have to append a high-order
    // digit on the dividend; we do that unconditionally.
 
-   s = nlz(v[1]) - 16;        // 0 <= s <= 15.
+    const int8_t s = 7;        // 0 <= s <= 15.
+   
    //vn = (uint16_t *)alloca(2*n);
-   for (i = n - 1; i > 0; i--)
-      vn[i] = (v[i] << s) | (v[i-1] >> 16-s);
+
+   vn[1] = (v[1] << s) | (v[0] >> 16-s);
+
    vn[0] = v[0] << s;
 
    //un = (uint16_t *)alloca(2*(m + 1));
-   un[m] = u[m-1] >> 16-s;
-   for (i = m - 1; i > 0; i--)
+   un[3] = u[2] >> 16-s;
+   for (i = 2; i > 0; i--)
       un[i] = (u[i] << s) | (u[i-1] >> 16-s);
    un[0] = u[0] << s;
 
-   for (j = m - n; j >= 0; j--) {       // Main loop.
+   for (j = 1; j >= 0; j--) {       // Main loop.
       // Compute estimate qhat of q[j].
-      qhat = (un[j+n]*b + un[j+n-1])/vn[n-1];
-      rhat = (un[j+n]*b + un[j+n-1]) - qhat*vn[n-1];
+      qhat = (un[j+2]*b + un[j+1])/vn[1];
+      rhat = (un[j+2]*b + un[j+1]) - qhat*vn[1];
 again:
-      if (qhat >= b || qhat*vn[n-2] > b*rhat + un[j+n-2])
+      if (qhat >= b || qhat*vn[0] > b*rhat + un[j])
       { qhat = qhat - 1;
-        rhat = rhat + vn[n-1];
+        rhat = rhat + vn[1];
         if (rhat < b) goto again;
       }
 
       // Multiply and subtract.
       k = 0;
-      for (i = 0; i < n; i++) {
+      for (i = 0; i < 2; i++) {
          p = qhat*vn[i];
          t = un[i+j] - k - (p & 0xFFFF);
          un[i+j] = t;
          k = (p >> 16) - (t >> 16);
       }
-      t = un[j+n] - k;
-      un[j+n] = t;
+      t = un[j+2] - k;
+      un[j+2] = t;
 
       q[j] = qhat;              // Store quotient digit.
       if (t < 0) {              // If we subtracted too
          q[j] = q[j] - 1;       // much, add back.
          k = 0;
-         for (i = 0; i < n; i++) {
+         for (i = 0; i < 2; i++) {
             t = un[i+j] + vn[i] + k;
             un[i+j] = t;
             k = t >> 16;
          }
-         un[j+n] = un[j+n] + k;
+         un[j+2] = un[j+2] + k;
       }
    } // End j.
    // If the caller wants the remainder, unnormalize
@@ -664,8 +739,7 @@ again:
       for (i = 0; i < n; i++)
          r[i] = (un[i] >> s) | (un[i+1] << 16-s);
    }*/
-	 
-	 //Only return most significant 16 bits of remainder
+   //Only return most significant 16 bits of remainder
 	 r[0] = (un[1] >> s) | (un[2] << 16-s);
    //return 0;
 }
@@ -785,7 +859,10 @@ void updateFreq(uint32_t frequency){
 
 void flipLED(void)
 {
-	VolumeADC = ADC_Read(AIN3);
+	//VolumeADC = ADC_Read(AIN3);
+	
+	//Serial_print_int((int)1);
+	//Serial_newline();
 	
 	//if(frequency!=old_frequency){
 	//	updateFreq(frequency);
@@ -801,9 +878,153 @@ void flipLED(void)
 	
 }
 
+void sendWg(uint8_t b1, uint8_t b2){
+	
+	SPI_SendData(b1);
+	while(!SPI_GetFlagStatus(SPI_FLAG_TXE));
+	SPI_SendData(b2);
+	while(!SPI_GetFlagStatus(SPI_FLAG_TXE));
+	
+}
+
+void wgDelay(void){
+	delay(1);
+	
+	GPIO_WriteHigh(CS_WG);
+	
+	delay(1);
+	
+	GPIO_WriteLow(CS_WG);
+	
+	delay(1);
+}
+
+
+void initFreq(void){
+	while(SPI_GetFlagStatus(SPI_FLAG_BSY));
+	GPIO_WriteLow(CS_WG);
+	delay(5);
+	
+	sendWg(0b00100000,0b00000000);
+	wgDelay();
+	
+	sendWg(0b00100001,0b00000000);
+	wgDelay();
+	
+	sendWg(0b00100001,0b00000000);
+	wgDelay();
+	
+	//LSB
+	sendWg(0b01000100,0b00110010);
+	wgDelay();
+	
+	//MSB
+	sendWg(0b01000000,0b00000000);
+	wgDelay();
+	
+	sendWg(0b00100001,0b00000000);
+	wgDelay();
+	
+	sendWg(0b10101001,0b11110001);
+	wgDelay();
+	
+	sendWg(0b10000000,0b00000000);
+	wgDelay();
+	
+	sendWg(0b11000000,0b00000000);
+	wgDelay();
+	
+	sendWg(0b11100000,0b00000000);
+	wgDelay();
+	
+	sendWg(0b00100001,0b00000000);
+	wgDelay();
+	
+	sendWg(0b00100000,0b00000000);
+	wgDelay();
+	
+	sendWg(0b00100000,0b00000000);
+	wgDelay();
+	
+	sendWg(0b00100000,0b00000000);
+	wgDelay();
+	
+	sendWg(0b00100000,0b00000000);	
+	
+	
+	delay(5);
+	
+	GPIO_WriteHigh(CS_WG);
+	delay(1);	
+}
 
 
 
+void updateFreq(void)
+{
+	
+	uint16_t q[2], r[1];
+	uint16_t *u, *v;
+	uint16_t entire_u[]={0x0000,(uint16_t)((frequency<<12)&0xFFFF),(uint16_t)((frequency>>4)&0xFFFF)};
+	uint16_t entire_v[]={0x7840,0x017D};
+	
+	//entire_u[1]=;
+	//entire_u[2]=;
+	
+	u=&entire_u[0];
+  v=&entire_v[0];
+	
+	divmnu(q, r, u, v);
+	
+	
+	//Serial_print_int((int)26);
+	//Serial_newline();
+	
+	
+	
+	//uint32_t freq_reg = ;
+
+	
+	//lsb = freq_reg&0b0011111111111111;
+  //msb = (freq_reg>>14)&0b0011111111111111;
+	
+	
+	
+	while(SPI_GetFlagStatus(SPI_FLAG_BSY));
+	
+	GPIO_WriteLow(CS_WG);
+	delay(5);
+	
+	
+	sendWg(0b00100000,0b00000000);
+	wgDelay();
+	//sendWg(0x50,0xC7);
+	if(r[0]>0xBF){
+	sendWg((uint8_t)(((q[0]>>8)&0x3F)+0x40),(uint8_t)((q[0]&0xFF)+0b1));
+	}
+	else{
+	sendWg((uint8_t)(((q[0]>>8)&0x3F)+0x40),(uint8_t)(q[0]&0xFF));
+	}
+	wgDelay();
+	//sendWg(0x40,0x00);
+	
+	//sendWg((uint8_t)(q[1]>>8)&0xFF,(uint8_t)q[1]&0xFF);
+	
+	sendWg((uint8_t)(((q[1]>>6)&0x3F)+0x40),(uint8_t)(((q[1]&0x3F)<<2)+((q[0]>>14)&0b11)));
+
+	
+	//SPI_SendData(0xC000);
+	//while(!SPI_GetFlagStatus(SPI_FLAG_TXE));
+	
+	//SPI_SendData(0x2000);
+	//while(!SPI_GetFlagStatus(SPI_FLAG_TXE));
+	
+	delay(5);
+	
+	GPIO_WriteHigh(CS_WG);
+	delay(1);	
+	
+}
 
 
 
@@ -837,11 +1058,6 @@ void changePot(uint8_t volumeCommand){
 
 
 
-
-
-
-
-/*
 
 
 void updateDisp(uint32_t frequency){
@@ -887,8 +1103,6 @@ void updateDisp(uint32_t frequency){
 	(void)I2C->SR3;
 	
 }
-
-
 
 
 
@@ -994,6 +1208,7 @@ void startLCD(void){
 	
 	
 	
+	/*
 	I2C_SendData(0b11100000); //display info : pin 1-2
 	
 	while(!I2C_CheckEvent(I2C_EVENT_MASTER_BYTE_TRANSMITTED));
@@ -1057,7 +1272,7 @@ void startLCD(void){
 	I2C_SendData(0b01101000); //display info : pin 35-36
 	
 	while(!I2C_CheckEvent(I2C_EVENT_MASTER_BYTE_TRANSMITTED));
-	
+	*/
 	
 	
 			
@@ -1089,4 +1304,3 @@ void startLCD(void){
 	(void)I2C->SR1;
 	(void)I2C->SR3;
 }
-*/
